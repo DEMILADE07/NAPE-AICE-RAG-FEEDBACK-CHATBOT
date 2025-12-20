@@ -517,6 +517,7 @@ class DataIngestion:
         all_responses = []
         events_with_responses = {}
         events_without_responses = []
+        failed_events = []  # Track events that failed due to rate limits
         
         print(f"\n📊 Found {len(events)} events to process\n")
         
@@ -527,23 +528,66 @@ class DataIngestion:
             
             print(f"[{i}/{len(events)}] Processing: {event_name}")
             
-            df = self.get_form_responses(form_url, event_name, response_sheet_link)
-            
-            if df is not None and not df.empty:
-                df['event_category'] = self.categorize_event(event_name)
-                df['form_date'] = event['form_date']
-                df['occurrence'] = event['occurrence']
-                all_responses.append(df)
-                events_with_responses[event_name] = len(df)
-                print(f"  ✅ Collected {len(df)} responses")
-            else:
-                events_without_responses.append(event_name)
-                print(f"  ⚠️  No responses found for {event_name} (event will still be tracked)")
+            try:
+                df = self.get_form_responses(form_url, event_name, response_sheet_link)
+                
+                if df is not None and not df.empty:
+                    df['event_category'] = self.categorize_event(event_name)
+                    df['form_date'] = event['form_date']
+                    df['occurrence'] = event['occurrence']
+                    all_responses.append(df)
+                    events_with_responses[event_name] = len(df)
+                    print(f"  ✅ Collected {len(df)} responses")
+                else:
+                    events_without_responses.append(event_name)
+                    print(f"  ⚠️  No responses found for {event_name} (event will still be tracked)")
+            except Exception as e:
+                error_str = str(e).lower()
+                # Check if it's a rate limit error
+                if '429' in error_str or 'quota' in error_str or 'rate limit' in error_str:
+                    print(f"  ⚠️  Rate limit hit for {event_name}, will retry later")
+                    failed_events.append(event)  # Store the full event for retry
+                else:
+                    # Other errors - don't retry
+                    events_without_responses.append(event_name)
+                    print(f"  ⚠️  Error processing {event_name}: {str(e)[:100]}")
             
             # Add a small delay between events to avoid hitting rate limits
             # Google Sheets API allows ~60 requests per minute, so ~1 second delay is safe
             if i < len(events):  # Don't delay after the last event
                 time.sleep(1)
+        
+        # Retry failed events after a longer wait
+        if failed_events:
+            print(f"\n🔄 Retrying {len(failed_events)} events that hit rate limits...")
+            print("   Waiting 30 seconds for rate limit to reset...")
+            time.sleep(30)  # Wait for rate limit to reset
+            
+            for event in failed_events:
+                event_name = event['event_name']
+                form_url = event['form_link']
+                response_sheet_link = event.get('response_sheet_link', '')
+                
+                print(f"🔄 Retrying: {event_name}")
+                try:
+                    df = self.get_form_responses(form_url, event_name, response_sheet_link)
+                    
+                    if df is not None and not df.empty:
+                        df['event_category'] = self.categorize_event(event_name)
+                        df['form_date'] = event['form_date']
+                        df['occurrence'] = event['occurrence']
+                        all_responses.append(df)
+                        events_with_responses[event_name] = len(df)
+                        print(f"  ✅ Collected {len(df)} responses on retry")
+                    else:
+                        events_without_responses.append(event_name)
+                        print(f"  ⚠️  Still no responses found for {event_name}")
+                except Exception as e:
+                    events_without_responses.append(event_name)
+                    print(f"  ❌ Retry failed for {event_name}: {str(e)[:100]}")
+                
+                # Delay between retries
+                time.sleep(2)
         
         if not all_responses:
             raise Exception("No responses collected from any form!")

@@ -44,16 +44,38 @@ try:
                             import re
                             # Find and fix the private_key field
                             if 'BEGIN PRIVATE KEY' in google_creds and 'END PRIVATE KEY' in google_creds:
-                                # Escape newlines between BEGIN and END
-                                begin_idx = google_creds.find('BEGIN PRIVATE KEY')
-                                end_idx = google_creds.find('END PRIVATE KEY') + len('END PRIVATE KEY')
-                                private_section = google_creds[begin_idx:end_idx]
-                                private_section_fixed = private_section.replace('\n', '\\n').replace('\r', '\\r')
-                                google_creds = google_creds[:begin_idx] + private_section_fixed + google_creds[end_idx:]
-                                try:
-                                    creds_dict = json_lib.loads(google_creds)
-                                except:
-                                    raise ValueError(f"Could not parse credentials JSON. Please ensure newlines in private_key are escaped as \\n")
+                                # Find the private_key value (it spans from "private_key": " to the closing quote)
+                                # We need to find the start of the value and the end
+                                key_pattern = r'"private_key"\s*:\s*"'
+                                match = re.search(key_pattern, google_creds)
+                                if match:
+                                    start_pos = match.end()
+                                    # Find the closing quote after END PRIVATE KEY
+                                    end_pattern = r'-----END PRIVATE KEY-----\s*"'
+                                    end_match = re.search(end_pattern, google_creds[start_pos:])
+                                    if end_match:
+                                        end_pos = start_pos + end_match.end() - 1  # -1 to exclude the quote
+                                        # Extract and fix the private key value
+                                        key_value = google_creds[start_pos:end_pos]
+                                        # Replace actual newlines with escaped newlines
+                                        key_value_fixed = key_value.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                                        # Reconstruct JSON
+                                        google_creds = google_creds[:start_pos] + key_value_fixed + google_creds[end_pos:]
+                                        try:
+                                            creds_dict = json_lib.loads(google_creds)
+                                        except json_lib.JSONDecodeError:
+                                            # Last resort: try importing the parsing function from data_ingestion
+                                            try:
+                                                from data_ingestion import parse_credentials_json
+                                                creds_dict = parse_credentials_json(google_creds)
+                                            except ImportError:
+                                                raise ValueError(f"Could not parse credentials JSON. Please ensure newlines in private_key are escaped as \\n. Error: {e}")
+                                    else:
+                                        raise ValueError(f"Could not find end of private_key field. Please check your JSON format.")
+                                else:
+                                    raise ValueError(f"Could not find private_key field. Please check your JSON format.")
+                            else:
+                                raise ValueError(f"Could not parse credentials JSON. Please ensure newlines in private_key are escaped as \\n. Error: {e}")
                         else:
                             raise
                 elif isinstance(google_creds, dict):
@@ -126,7 +148,7 @@ if not GROQ_API_KEY:
     print("⚠️ GROQ_API_KEY is empty. LLM will not be available.")
 else:
     print(f"✅ GROQ_API_KEY is set (length: {len(GROQ_API_KEY)} characters)")
-GROQ_MODEL = "llama-3.1-70b-versatile"
+GROQ_MODEL = "llama-3.3-70b-versatile"  # Updated: llama-3.1-70b-versatile was decommissioned
 
 # RAG Settings
 TOP_K_RESULTS = 10  # Number of feedback items to retrieve per query
