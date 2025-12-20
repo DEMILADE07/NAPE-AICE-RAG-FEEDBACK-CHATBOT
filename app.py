@@ -19,11 +19,55 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Helper function to check secrets status
+def check_secrets_status():
+    """Check if required secrets are configured"""
+    status = {
+        'google_creds': False,
+        'groq_key': False,
+        'google_error': None,
+        'groq_error': None
+    }
+    
+    try:
+        if hasattr(st, 'secrets'):
+            # Check Google Credentials
+            try:
+                google_creds = st.secrets.get("GOOGLE_CREDENTIALS", None)
+                if google_creds:
+                    status['google_creds'] = True
+                else:
+                    status['google_error'] = "GOOGLE_CREDENTIALS not found in secrets"
+            except Exception as e:
+                status['google_error'] = f"Error reading GOOGLE_CREDENTIALS: {str(e)}"
+            
+            # Check Groq API Key
+            try:
+                groq_key = st.secrets.get("GROQ_API_KEY", None)
+                if groq_key:
+                    status['groq_key'] = True
+                else:
+                    status['groq_error'] = "GROQ_API_KEY not found in secrets"
+            except Exception as e:
+                status['groq_error'] = f"Error reading GROQ_API_KEY: {str(e)}"
+        else:
+            status['google_error'] = "Streamlit secrets not available"
+            status['groq_error'] = "Streamlit secrets not available"
+    except Exception as e:
+        status['google_error'] = f"Error checking secrets: {str(e)}"
+        status['groq_error'] = f"Error checking secrets: {str(e)}"
+    
+    return status
+
 # Initialize session state
 if 'storage' not in st.session_state:
     st.session_state.storage = StorageManager()
     st.session_state.rag_engine = RAGEngine(st.session_state.storage)
     st.session_state.data_loaded = False
+    st.session_state.secrets_checked = False
+
+# Check secrets status
+secrets_status = check_secrets_status()
 
 # Auto-load data on startup if database is empty
 if not st.session_state.data_loaded:
@@ -411,6 +455,46 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
+    # Secrets Status Check
+    st.markdown("#### 🔐 Configuration Status")
+    if secrets_status['google_creds']:
+        st.success("✅ Google Credentials: Configured")
+    else:
+        st.error(f"❌ Google Credentials: {secrets_status.get('google_error', 'Not configured')}")
+    
+    if secrets_status['groq_key']:
+        st.success("✅ Groq API Key: Configured")
+    else:
+        st.error(f"❌ Groq API Key: {secrets_status.get('groq_error', 'Not configured')}")
+    
+    if not secrets_status['google_creds'] or not secrets_status['groq_key']:
+        with st.expander("📝 How to Fix"):
+            st.markdown("""
+            **To configure secrets in Streamlit Cloud:**
+            1. Go to your app on Streamlit Cloud
+            2. Click "Manage app" → "Settings" → "Secrets"
+            3. Add these two keys:
+            
+            ```toml
+            GOOGLE_CREDENTIALS = '''
+            {
+              "type": "service_account",
+              "project_id": "...",
+              ...
+            }
+            '''
+            
+            GROQ_API_KEY = "your-groq-api-key-here"
+            ```
+            
+            **Important:** 
+            - For `GOOGLE_CREDENTIALS`, paste your complete JSON (can use triple quotes)
+            - For `GROQ_API_KEY`, just paste your API key string
+            - Click "Save" and the app will restart
+            """)
+    
+    st.markdown("---")
+    
     # Quick stats with better styling - Oil & Gas theme (removed green bar/div)
     st.markdown("#### 📈 Quick Statistics")
     events = st.session_state.storage.get_event_list()
@@ -426,6 +510,19 @@ with st.sidebar:
         st.markdown(f'<div style="font-size: 2rem; font-weight: 700; color: #006400;">{total_responses:,}</div>', unsafe_allow_html=True)
     
     st.markdown("---")
+    
+    # Re-initialize RAG Engine if secrets become available
+    if not secrets_status['groq_key'] and st.button("🔄 Re-check Secrets & LLM", use_container_width=True, help="Click if you just added secrets"):
+        # Re-import config to get updated secrets
+        import importlib
+        import config
+        importlib.reload(config)
+        from config import GROQ_API_KEY, USE_GROQ
+        from rag_engine import RAGEngine
+        
+        # Re-initialize RAG engine
+        st.session_state.rag_engine = RAGEngine(st.session_state.storage)
+        st.rerun()
     
     # Manual Data Loading Button
     if total_responses == 0:
