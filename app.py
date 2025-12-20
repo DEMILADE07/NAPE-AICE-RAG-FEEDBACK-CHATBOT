@@ -455,19 +455,19 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    # Secrets Status Check
-    st.markdown("#### 🔐 Configuration Status")
-    if secrets_status['google_creds']:
-        st.success("✅ Google Credentials: Configured")
-    else:
-        st.error(f"❌ Google Credentials: {secrets_status.get('google_error', 'Not configured')}")
-    
-    if secrets_status['groq_key']:
-        st.success("✅ Groq API Key: Configured")
-    else:
-        st.error(f"❌ Groq API Key: {secrets_status.get('groq_error', 'Not configured')}")
-    
+    # Configuration Status - Only show if there's an issue (not user-facing when working)
     if not secrets_status['google_creds'] or not secrets_status['groq_key']:
+        st.markdown("#### 🔐 Configuration Status")
+        if secrets_status['google_creds']:
+            st.success("✅ Google Credentials: Configured")
+        else:
+            st.error(f"❌ Google Credentials: {secrets_status.get('google_error', 'Not configured')}")
+        
+        if secrets_status['groq_key']:
+            st.success("✅ Groq API Key: Configured")
+        else:
+            st.error(f"❌ Groq API Key: {secrets_status.get('groq_error', 'Not configured')}")
+        
         with st.expander("📝 How to Fix"):
             st.markdown("""
             **To configure secrets in Streamlit Cloud:**
@@ -492,8 +492,7 @@ with st.sidebar:
             - For `GROQ_API_KEY`, just paste your API key string
             - Click "Save" and the app will restart
             """)
-    
-    st.markdown("---")
+        st.markdown("---")
     
     # Quick stats with better styling - Oil & Gas theme (removed green bar/div)
     st.markdown("#### 📈 Quick Statistics")
