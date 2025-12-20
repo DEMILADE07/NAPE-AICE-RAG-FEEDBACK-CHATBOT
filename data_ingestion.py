@@ -5,6 +5,8 @@ import pandas as pd
 from typing import List, Dict, Optional
 import re
 import time
+import json
+import tempfile
 from datetime import datetime
 from config import CREDENTIALS_PATH, MASTER_SHEET_NAME, EVENT_CATEGORIES
 
@@ -24,16 +26,62 @@ class DataIngestion:
                 'https://www.googleapis.com/auth/spreadsheets.readonly',
                 'https://www.googleapis.com/auth/drive.readonly'
             ]
-            creds = Credentials.from_service_account_file(
-                str(CREDENTIALS_PATH), scopes=scope
-            )
+            
+            # Check if credentials file exists
+            if not CREDENTIALS_PATH.exists():
+                # Try to get from Streamlit secrets if file doesn't exist
+                try:
+                    import streamlit as st
+                    if hasattr(st, 'secrets'):
+                        google_creds = st.secrets.get("GOOGLE_CREDENTIALS", None)
+                        if google_creds:
+                            # Handle both string and dict formats
+                            if isinstance(google_creds, str):
+                                google_creds = google_creds.strip()
+                                if google_creds.startswith('"""') or google_creds.startswith("'''"):
+                                    google_creds = google_creds[3:-3].strip()
+                                creds_dict = json.loads(google_creds)
+                            elif isinstance(google_creds, dict):
+                                creds_dict = google_creds
+                            else:
+                                raise ValueError(f"Unexpected type for GOOGLE_CREDENTIALS: {type(google_creds)}")
+                            
+                            # Create temp file
+                            temp_creds = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                            json.dump(creds_dict, temp_creds, indent=2)
+                            temp_creds.close()
+                            creds_path = temp_creds.name
+                            print(f"✅ Using credentials from Streamlit secrets")
+                        else:
+                            raise FileNotFoundError(
+                                f"credentials.json not found at {CREDENTIALS_PATH} and "
+                                "GOOGLE_CREDENTIALS not found in Streamlit secrets. "
+                                "Please add GOOGLE_CREDENTIALS to Streamlit Cloud secrets."
+                            )
+                    else:
+                        raise FileNotFoundError(
+                            f"credentials.json not found at {CREDENTIALS_PATH}. "
+                            "Please follow SETUP_GUIDE.md to create it or add GOOGLE_CREDENTIALS to Streamlit secrets."
+                        )
+                except (ImportError, RuntimeError, AttributeError):
+                    # Not in Streamlit context
+                    raise FileNotFoundError(
+                        f"credentials.json not found at {CREDENTIALS_PATH}. "
+                        "Please follow SETUP_GUIDE.md to create it."
+                    )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as e:
+                    raise FileNotFoundError(
+                        f"GOOGLE_CREDENTIALS found in Streamlit secrets but could not be parsed: {e}. "
+                        "Please check the format of your credentials JSON."
+                    )
+            else:
+                creds_path = str(CREDENTIALS_PATH)
+            
+            creds = Credentials.from_service_account_file(creds_path, scopes=scope)
             self.client = gspread.authorize(creds)
             print("✅ Authenticated with Google Sheets API")
         except FileNotFoundError:
-            raise FileNotFoundError(
-                f"credentials.json not found at {CREDENTIALS_PATH}. "
-                "Please follow SETUP_GUIDE.md to create it."
-            )
+            raise  # Re-raise FileNotFoundError with our custom message
         except Exception as e:
             raise Exception(f"Authentication failed: {str(e)}")
     
