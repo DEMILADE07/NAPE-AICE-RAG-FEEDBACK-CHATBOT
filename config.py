@@ -28,11 +28,17 @@ try:
                 
                 # Handle both string and dict formats
                 if isinstance(google_creds, str):
-                    # Parse JSON string
+                    # Parse JSON string - handle both raw JSON and triple-quoted strings
+                    google_creds = google_creds.strip()
+                    if google_creds.startswith('"""') or google_creds.startswith("'''"):
+                        # Remove triple quotes
+                        google_creds = google_creds[3:-3].strip()
                     creds_dict = json_lib.loads(google_creds)
-                else:
+                elif isinstance(google_creds, dict):
                     # Already a dict
                     creds_dict = google_creds
+                else:
+                    raise ValueError(f"Unexpected type for GOOGLE_CREDENTIALS: {type(google_creds)}")
                 
                 # Create temp file
                 temp_creds = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
@@ -40,10 +46,15 @@ try:
                 temp_creds.close()
                 CREDENTIALS_PATH = Path(temp_creds.name)
                 print(f"✅ Using credentials from Streamlit secrets (temp file: {CREDENTIALS_PATH})")
-        except (KeyError, AttributeError, TypeError, json_lib.JSONDecodeError) as e:
+        except (KeyError, AttributeError, TypeError, json_lib.JSONDecodeError, ValueError) as e:
             # Secrets key doesn't exist or parsing failed - use default file
             print(f"⚠️ Could not read GOOGLE_CREDENTIALS from secrets: {e}")
+            import traceback
+            print(traceback.format_exc())
             pass
+        else:
+            if not google_creds:
+                print("⚠️ GOOGLE_CREDENTIALS not found in Streamlit secrets")
 except (ImportError, RuntimeError):
     # Streamlit not available or not in Streamlit context (e.g., when running pipeline.py)
     # Use default file path
@@ -77,12 +88,22 @@ try:
             secret_key = st.secrets.get("GROQ_API_KEY", None)
             if secret_key:
                 GROQ_API_KEY = secret_key
-        except (KeyError, AttributeError, TypeError):
+                print(f"✅ Using GROQ_API_KEY from Streamlit secrets")
+            else:
+                print("⚠️ GROQ_API_KEY not found in Streamlit secrets")
+        except (KeyError, AttributeError, TypeError) as e:
             # Key doesn't exist or secrets not available - use env var
+            print(f"⚠️ Could not read GROQ_API_KEY from secrets: {e}")
             pass
 except (ImportError, RuntimeError):
     # Streamlit not available (e.g., when running pipeline.py) - use env var
     pass
+
+# Debug: Check if GROQ_API_KEY is set (but don't print the actual key)
+if not GROQ_API_KEY:
+    print("⚠️ GROQ_API_KEY is empty. LLM will not be available.")
+else:
+    print(f"✅ GROQ_API_KEY is set (length: {len(GROQ_API_KEY)} characters)")
 GROQ_MODEL = "llama-3.1-70b-versatile"
 
 # RAG Settings

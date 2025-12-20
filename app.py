@@ -427,6 +427,34 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Manual Data Loading Button
+    if total_responses == 0:
+        st.markdown("#### 🔄 Data Management")
+        if st.button("📥 Load Data from Google Sheets", type="primary", use_container_width=True):
+            try:
+                from pipeline import process_and_store_data
+                with st.spinner("🔄 Loading data from Google Sheets... This may take 2-5 minutes."):
+                    success, message = process_and_store_data(st.session_state.storage)
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.session_state.data_loaded = True
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+                        # Show helpful error message
+                        st.info("""
+                        **Troubleshooting:**
+                        1. Check that `GOOGLE_CREDENTIALS` is set in Streamlit Cloud secrets
+                        2. Ensure the credentials JSON is complete and valid
+                        3. Verify the service account has access to the Google Sheets
+                        """)
+            except Exception as e:
+                st.error(f"❌ Error loading data: {str(e)}")
+                import traceback
+                with st.expander("🔍 Show detailed error"):
+                    st.code(traceback.format_exc())
+        st.markdown("---")
+    
     # Event filter - Functional
     st.markdown("#### 🔍 Filter by Event")
     event_names = ['All'] + [e['event_name'] for e in events]
