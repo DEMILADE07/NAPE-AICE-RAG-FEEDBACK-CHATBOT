@@ -1,8 +1,9 @@
 # Data Processing
 pandas>=2.0,<3.0
-# NumPy: Allow 2.0+ for Python 3.13 compatibility
-# Updated Streamlit should support NumPy 2.0
-numpy>=1.26.4
+# NumPy: Must be <2.0 for ChromaDB 0.4.22 and Streamlit compatibility
+# ChromaDB uses deprecated np.float_ which was removed in NumPy 2.0
+# Python 3.13 needs >=1.26.4, but <2.0 for compatibility
+numpy>=1.26.4,<2.0
 
 # Google Sheets API
 gspread==6.1.2
