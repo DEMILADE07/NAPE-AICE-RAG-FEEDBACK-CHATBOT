@@ -1,6 +1,8 @@
 # Data Processing
 pandas>=2.0,<3.0
-numpy>=1.26.0,<2.0  # Streamlit requires numpy<2
+# NumPy: Allow 2.0+ for Python 3.13 compatibility
+# Updated Streamlit should support NumPy 2.0
+numpy>=1.26.4
 
 # Google Sheets API
 gspread==6.1.2
@@ -14,15 +16,17 @@ chromadb==0.4.22
 
 # Embeddings
 sentence-transformers>=5.0.0
-# PyTorch - pin to stable version to avoid meta tensor issues in 2.9+
-torch>=2.0.0,<2.4.0
+# PyTorch - allow newer versions for Python 3.13 compatibility
+# Note: Python 3.13 requires torch>=2.4.0, older versions don't have wheels
+torch>=2.0.0
 
 # LLM
 ollama==0.1.7  # For local development only
 groq==0.4.2  # For Streamlit Cloud deployment (recommended)
 
 # Web Interface
-streamlit==1.29.0
+# Use latest Streamlit - newer versions may support NumPy 2.0 and Python 3.13
+streamlit>=1.40.0
 plotly==5.18.0
 
 # Utilities
