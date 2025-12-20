@@ -74,12 +74,30 @@ class RAGEngine:
         is_qualitative = any(kw in query_lower for kw in qualitative_keywords)
         
         # Extract event mentions - also check for hotel mentions
+        # Use more sophisticated matching to handle partial matches and variations
         mentioned_events = []
         events = self.storage.get_event_list()
+        
+        # First, try exact substring match (most reliable)
         for event in events:
             event_name_lower = event['event_name'].lower()
-            if event_name_lower in query_lower:
+            # Check if the event name (or significant parts of it) appears in the query
+            # Remove common suffixes like "(VIRTUAL)", "(RESPONSES)", etc. for matching
+            event_name_clean = event_name_lower
+            for suffix in [' (virtual)', ' (responses)', ' virtual', ' responses']:
+                event_name_clean = event_name_clean.replace(suffix, '')
+            
+            # Check if cleaned event name is in query
+            if event_name_clean in query_lower:
                 mentioned_events.append(event['event_name'])
+            # Also check if significant words from event name are in query
+            elif len(event_name_clean.split()) > 1:
+                # For multi-word events, check if at least 2 significant words match
+                event_words = [w for w in event_name_clean.split() if len(w) > 3 and w not in ['the', 'and', 'for', 'with']]
+                if len(event_words) >= 2:
+                    matched_words = sum(1 for word in event_words if word in query_lower)
+                    if matched_words >= 2:  # Require at least 2 significant words to match
+                        mentioned_events.append(event['event_name'])
         
         # If hotel is mentioned, likely about accommodation
         if 'hotel' in query_lower and 'ACCOMMODATION' not in mentioned_events:
@@ -101,13 +119,38 @@ class RAGEngine:
         
         # Semantic search for comments
         if query_info['is_qualitative'] or query_info['is_hybrid']:
-            event_filter = query_info['mentioned_events'][0] if query_info['mentioned_events'] else None
-            comments = self.storage.search_comments(
-                query, 
-                top_k=TOP_K_RESULTS,
-                event_filter=event_filter
-            )
-            results.extend(comments)
+            # If specific events are mentioned, ONLY search within those events
+            # This ensures we don't get irrelevant results from other events
+            if query_info['mentioned_events']:
+                # Use the first mentioned event (most specific match)
+                event_filter = query_info['mentioned_events'][0]
+                comments = self.storage.search_comments(
+                    query, 
+                    top_k=TOP_K_RESULTS * 2,  # Get more results to filter better
+                    event_filter=event_filter
+                )
+                # Double-check that all results are from the correct event
+                filtered_comments = []
+                for comment in comments:
+                    metadata = comment.get('metadata', {})
+                    comment_event = metadata.get('event_name', '')
+                    # Only include if it matches the filter (case-insensitive)
+                    if comment_event.upper() == event_filter.upper():
+                        filtered_comments.append(comment)
+                    # Also handle partial matches (e.g., "PRE-CONFERENCE FIELD TRIP" matches "PRE-CONFERENCE FIELD TRIP (VIRTUAL)")
+                    elif event_filter.upper() in comment_event.upper() or comment_event.upper() in event_filter.upper():
+                        filtered_comments.append(comment)
+                
+                # Take top K after filtering
+                results.extend(filtered_comments[:TOP_K_RESULTS])
+            else:
+                # No specific event mentioned - search all events
+                comments = self.storage.search_comments(
+                    query, 
+                    top_k=TOP_K_RESULTS,
+                    event_filter=None
+                )
+                results.extend(comments)
         
         return results
     

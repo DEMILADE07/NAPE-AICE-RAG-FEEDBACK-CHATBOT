@@ -432,7 +432,7 @@ if not header_displayed:
         
         st.markdown(
             f'<div class="header-container" style="text-align: center;">'
-            f'<img src="data:image/jpeg;base64,{img_data}" style="width: 70%; max-width: 1000px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.15);" />'
+            f'<img src="data:image/jpeg;base64,{img_data}" style="width: 95%; max-width: 1400px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.15);" />'
             f'</div>',
             unsafe_allow_html=True
         )
@@ -703,15 +703,52 @@ with tab1:
             # Show response time
             st.caption(f"⏱️ Response generated in {elapsed_time:.2f} seconds")
             
-            # Show sources if available
+            # Show sources if available - filter to ensure relevance
             if result.get('sources'):
-                num_sources = len(result['sources'])
+                # Extract mentioned events from query for additional filtering
+                query_lower = query_to_process.lower()
+                mentioned_events = []
+                events = st.session_state.storage.get_event_list()
+                for event in events:
+                    event_name_lower = event['event_name'].lower()
+                    # Clean event name for matching
+                    event_name_clean = event_name_lower
+                    for suffix in [' (virtual)', ' (responses)', ' virtual', ' responses']:
+                        event_name_clean = event_name_clean.replace(suffix, '')
+                    if event_name_clean in query_lower:
+                        mentioned_events.append(event['event_name'])
+                
+                # Filter sources to only show relevant ones
+                filtered_sources = []
+                for source in result['sources']:
+                    source_event = source['metadata'].get('event_name', '')
+                    # If specific events were mentioned, only show sources from those events
+                    if mentioned_events:
+                        # Check if source event matches any mentioned event
+                        matches = False
+                        for mentioned in mentioned_events:
+                            # Exact match or partial match (handle variations like "(VIRTUAL)")
+                            if (source_event.upper() == mentioned.upper() or 
+                                mentioned.upper() in source_event.upper() or 
+                                source_event.upper() in mentioned.upper()):
+                                matches = True
+                                break
+                        if matches:
+                            filtered_sources.append(source)
+                    else:
+                        # No specific event mentioned - show all sources
+                        filtered_sources.append(source)
+                
+                # Use filtered sources, fallback to original if filtering removed everything
+                display_sources = filtered_sources if filtered_sources else result['sources']
+                num_sources = len(display_sources)
+                
                 with st.expander(f"📎 Source Feedback (Top {num_sources})", expanded=False):
-                    for i, source in enumerate(result['sources'], 1):
+                    for i, source in enumerate(display_sources, 1):
                         event_name = source['metadata'].get('event_name', 'Unknown')
                         st.markdown(f"**{i}. [{event_name}]**")
                         st.markdown(f"   *{source['comment']}*")
-                        if i < len(result['sources']):
+                        if i < len(display_sources):
                             st.markdown("---")
             
             # Show statistics if available with better formatting
