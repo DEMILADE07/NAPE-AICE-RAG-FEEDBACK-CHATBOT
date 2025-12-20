@@ -948,13 +948,34 @@ with tab2:
 
 # Tab 3: Event List
 with tab3:
-    st.markdown("### 📋 All Events")
+    st.markdown("### 📋 Event Response Count Validation")
+    st.markdown("Use this table to manually validate response counts for each event/form.")
     
     events = st.session_state.storage.get_event_list()
     
     if events:
         events_df = pd.DataFrame(events)
         events_df = events_df.sort_values('event_name')
+        
+        # Get total from database for verification
+        cursor = st.session_state.storage.conn.cursor()
+        cursor.execute("SELECT COUNT(*) as total FROM responses")
+        db_total = cursor.fetchone()[0]
+        calculated_total = events_df['response_count'].sum()
+        
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Events", len(events_df))
+        with col2:
+            st.metric("Total Responses (Sum)", f"{calculated_total:,}")
+        with col3:
+            st.metric("Total Responses (DB)", f"{db_total:,}")
+        
+        if calculated_total != db_total:
+            st.info(f"ℹ️ Note: Sum of event counts ({calculated_total:,}) differs from database total ({db_total:,}). The database total is the authoritative count.")
+        
+        st.markdown("---")
         
         # Add category filter
         categories = ['All'] + sorted(events_df['event_category'].unique().tolist())
@@ -963,10 +984,65 @@ with tab3:
         if selected_category != 'All':
             events_df = events_df[events_df['event_category'] == selected_category]
         
+        # Sort options
+        col1, col2 = st.columns(2)
+        with col1:
+            sort_by = st.selectbox("Sort by", ["Event Name", "Response Count (High to Low)", "Response Count (Low to High)", "Category"], key="sort_events")
+        with col2:
+            show_zero = st.checkbox("Show events with 0 responses", value=True, key="show_zero")
+        
+        # Apply sorting
+        if sort_by == "Event Name":
+            events_df = events_df.sort_values('event_name')
+        elif sort_by == "Response Count (High to Low)":
+            events_df = events_df.sort_values('response_count', ascending=False)
+        elif sort_by == "Response Count (Low to High)":
+            events_df = events_df.sort_values('response_count', ascending=True)
+        elif sort_by == "Category":
+            events_df = events_df.sort_values(['event_category', 'event_name'])
+        
+        # Filter zero responses if needed
+        if not show_zero:
+            events_df = events_df[events_df['response_count'] > 0]
+        
+        # Display table with better formatting
+        display_df = events_df[['event_name', 'event_category', 'response_count']].copy()
+        display_df.columns = ['Event Name', 'Category', 'Response Count']
+        display_df = display_df.reset_index(drop=True)
+        display_df.index = display_df.index + 1  # Start from 1 instead of 0
+        
         st.dataframe(
-            events_df[['event_name', 'event_category', 'response_count']],
+            display_df,
             use_container_width=True,
-            hide_index=True
+            height=600
+        )
+        
+        # Summary by category
+        st.markdown("---")
+        st.markdown("#### 📊 Summary by Category")
+        category_summary = events_df.groupby('event_category').agg({
+            'response_count': ['sum', 'count']
+        }).reset_index()
+        category_summary.columns = ['Category', 'Total Responses', 'Number of Events']
+        category_summary = category_summary.sort_values('Total Responses', ascending=False)
+        category_summary.index = category_summary.index + 1
+        
+        st.dataframe(
+            category_summary,
+            use_container_width=True,
+            hide_index=False
+        )
+        
+        # Export option
+        st.markdown("---")
+        st.markdown("#### 💾 Export Data")
+        csv = display_df.to_csv(index=True)
+        st.download_button(
+            label="📥 Download Event Response Counts (CSV)",
+            data=csv,
+            file_name=f"nape_event_response_counts_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            key="download_events"
         )
     else:
         st.warning("⚠️ No events found. Please refresh data from Google Sheets.")
