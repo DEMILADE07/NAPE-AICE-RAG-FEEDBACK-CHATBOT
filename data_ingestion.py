@@ -11,6 +11,108 @@ from datetime import datetime
 from config import CREDENTIALS_PATH, MASTER_SHEET_NAME, EVENT_CATEGORIES
 
 
+def clean_json_string(json_str: str) -> str:
+    """Clean JSON string to handle common formatting issues from TOML/Streamlit secrets"""
+    # Remove triple quotes if present
+    json_str = json_str.strip()
+    if json_str.startswith('"""') or json_str.startswith("'''"):
+        json_str = json_str[3:-3].strip()
+    
+    return json_str
+
+
+def parse_credentials_json(json_str: str) -> dict:
+    """Parse credentials JSON with better error handling for control characters"""
+    cleaned = clean_json_string(json_str)
+    
+    # Try normal parsing first
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        # If it fails due to control characters, try to fix them
+        error_msg = str(e).lower()
+        if 'control character' in error_msg or 'invalid' in error_msg:
+            # The issue is likely in the private_key field with unescaped newlines
+            # TOML might have converted \n to actual newlines
+            # We need to escape them back to \n for JSON
+            
+            # Strategy: Find the private_key field and fix newlines
+            import re
+            
+            # Find the private_key field - it spans multiple lines
+            # Pattern: "private_key": "-----BEGIN...\n...\n...-----END..."
+            # We need to match from "private_key" to the closing quote, handling newlines
+            
+            # First, try to find where private_key starts and ends
+            private_key_pattern = r'"private_key"\s*:\s*"'
+            match_start = re.search(private_key_pattern, cleaned)
+            
+            if match_start:
+                start_pos = match_start.end()
+                # Find the closing quote - it should be after "-----END PRIVATE KEY-----"
+                # Look for the pattern that ends the private key value
+                end_pattern = r'-----END PRIVATE KEY-----\s*"'
+                end_match = re.search(end_pattern, cleaned[start_pos:])
+                
+                if end_match:
+                    end_pos = start_pos + end_match.end()
+                    # Extract the private key value
+                    key_value = cleaned[start_pos:end_pos-1]  # -1 to exclude the closing quote
+                    
+                    # Escape newlines and other control characters
+                    escaped_value = key_value.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    
+                    # Reconstruct the JSON
+                    fixed_json = (
+                        cleaned[:start_pos] + 
+                        escaped_value + 
+                        '"' + 
+                        cleaned[end_pos:]
+                    )
+                    
+                    try:
+                        return json.loads(fixed_json)
+                    except json.JSONDecodeError:
+                        pass
+            
+            # Alternative: Try to escape all control characters in the entire string
+            # This is more aggressive but might work
+            fixed_json = cleaned
+            # Replace actual newlines that are inside string values with \n
+            # This is tricky - we need to be careful not to break the JSON structure
+            
+            # Simple approach: replace newlines that appear to be in the private_key
+            if 'BEGIN PRIVATE KEY' in fixed_json and 'END PRIVATE KEY' in fixed_json:
+                # Find the section between BEGIN and END
+                begin_idx = fixed_json.find('BEGIN PRIVATE KEY')
+                end_idx = fixed_json.find('END PRIVATE KEY') + len('END PRIVATE KEY')
+                
+                # Get the section
+                private_section = fixed_json[begin_idx:end_idx]
+                # Escape newlines in this section
+                private_section_fixed = private_section.replace('\n', '\\n').replace('\r', '\\r')
+                
+                # Replace in the full string
+                fixed_json = fixed_json[:begin_idx] + private_section_fixed + fixed_json[end_idx:]
+                
+                try:
+                    return json.loads(fixed_json)
+                except json.JSONDecodeError:
+                    pass
+            
+            # Last resort: provide helpful error message
+            raise ValueError(
+                f"Could not parse credentials JSON due to control characters. "
+                f"Original error: {e}\n\n"
+                f"**Solution:** In Streamlit Cloud secrets, make sure your private_key uses \\n for newlines:\n"
+                f'  "private_key": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"\n\n'
+                f"Or use triple quotes in TOML and keep the newlines as-is (the app will handle them)."
+            )
+        
+        # Re-raise if it's a different error
+        raise
+
+
 class DataIngestion:
     """Handles data collection from Google Sheets"""
     
@@ -37,10 +139,10 @@ class DataIngestion:
                         if google_creds:
                             # Handle both string and dict formats
                             if isinstance(google_creds, str):
-                                google_creds = google_creds.strip()
-                                if google_creds.startswith('"""') or google_creds.startswith("'''"):
-                                    google_creds = google_creds[3:-3].strip()
-                                creds_dict = json.loads(google_creds)
+                                try:
+                                    creds_dict = parse_credentials_json(google_creds)
+                                except Exception as e:
+                                    raise ValueError(f"Could not parse GOOGLE_CREDENTIALS: {e}")
                             elif isinstance(google_creds, dict):
                                 creds_dict = google_creds
                             else:

@@ -33,7 +33,29 @@ try:
                     if google_creds.startswith('"""') or google_creds.startswith("'''"):
                         # Remove triple quotes
                         google_creds = google_creds[3:-3].strip()
-                    creds_dict = json_lib.loads(google_creds)
+                    
+                    # Try to parse - if it fails due to control characters, try to fix them
+                    try:
+                        creds_dict = json_lib.loads(google_creds)
+                    except json_lib.JSONDecodeError as e:
+                        error_msg = str(e).lower()
+                        if 'control character' in error_msg:
+                            # Try to fix newlines in private_key field
+                            import re
+                            # Find and fix the private_key field
+                            if 'BEGIN PRIVATE KEY' in google_creds and 'END PRIVATE KEY' in google_creds:
+                                # Escape newlines between BEGIN and END
+                                begin_idx = google_creds.find('BEGIN PRIVATE KEY')
+                                end_idx = google_creds.find('END PRIVATE KEY') + len('END PRIVATE KEY')
+                                private_section = google_creds[begin_idx:end_idx]
+                                private_section_fixed = private_section.replace('\n', '\\n').replace('\r', '\\r')
+                                google_creds = google_creds[:begin_idx] + private_section_fixed + google_creds[end_idx:]
+                                try:
+                                    creds_dict = json_lib.loads(google_creds)
+                                except:
+                                    raise ValueError(f"Could not parse credentials JSON. Please ensure newlines in private_key are escaped as \\n")
+                        else:
+                            raise
                 elif isinstance(google_creds, dict):
                     # Already a dict
                     creds_dict = google_creds
