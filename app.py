@@ -109,10 +109,22 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
         animation: fadeIn 1s ease-in;
+        width: 100%;
+    }
+    
+    .header-container img {
+        width: 95% !important;
+        max-width: 1400px !important;
+        height: auto;
+        border-radius: 12px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        margin: 0 auto;
+        display: block;
     }
     
     .header-image {
-        max-width: 100%;
+        width: 95% !important;
+        max-width: 1400px !important;
         height: auto;
         border-radius: 12px;
         box-shadow: 0 8px 16px rgba(0,0,0,0.15);
@@ -382,7 +394,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Header Image - Multiple approaches to ensure it displays (70% size)
+# Header Image - Multiple approaches to ensure it displays (95% width for more horizontal space)
 header_displayed = False
 
 # Method 1: Direct file path with size constraint
@@ -390,8 +402,8 @@ try:
     header_path = "header image.jpg"
     if os.path.exists(header_path):
         st.markdown('<div class="header-container">', unsafe_allow_html=True)
-        # Use width parameter to control size (70% of container)
-        st.image(header_path, use_container_width=False, width=700)
+        # Use use_container_width=True for full width
+        st.image(header_path, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         header_displayed = True
 except Exception:
@@ -401,13 +413,9 @@ except Exception:
 if not header_displayed:
     try:
         header_img = Image.open("header image.jpg")
-        # Resize to 70% of original
-        original_width, original_height = header_img.size
-        new_width = int(original_width * 0.7)
-        new_height = int(original_height * 0.7)
-        header_img_resized = header_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        # Keep original size or use container width for maximum horizontal space
         st.markdown('<div class="header-container">', unsafe_allow_html=True)
-        st.image(header_img_resized, use_container_width=False, width=new_width)
+        st.image(header_img, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         header_displayed = True
     except Exception:
@@ -418,10 +426,10 @@ if not header_displayed:
     try:
         import base64
         header_img = Image.open("header image.jpg")
-        # Resize to 70%
+        # Resize to 95% for more horizontal space
         original_width, original_height = header_img.size
-        new_width = int(original_width * 0.7)
-        new_height = int(original_height * 0.7)
+        new_width = int(original_width * 0.95)
+        new_height = int(original_height * 0.95)
         header_img_resized = header_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         
         # Convert to base64
