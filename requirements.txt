@@ -18,9 +18,8 @@ sentence-transformers>=5.0.0
 torch>=2.0.0,<2.4.0
 
 # LLM
-ollama==0.1.7
-# Alternative (if using Groq API):
-# groq==0.4.2
+ollama==0.1.7  # For local development only
+groq==0.4.2  # For Streamlit Cloud deployment (recommended)
 
 # Web Interface
 streamlit==1.29.0

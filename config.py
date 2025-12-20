@@ -4,9 +4,35 @@ from pathlib import Path
 
 # Paths
 BASE_DIR = Path(__file__).parent
-CREDENTIALS_PATH = BASE_DIR / "credentials.json"
 DB_PATH = BASE_DIR / "nape_feedback.db"
 CHROMA_DB_PATH = BASE_DIR / "chroma_db"
+
+# Credentials - Support both file and Streamlit secrets
+CREDENTIALS_PATH = BASE_DIR / "credentials.json"  # Default
+
+# Try to get from Streamlit secrets (for Streamlit Cloud)
+# Only works when running in Streamlit context
+try:
+    import streamlit as st
+    # Check if we're actually in a Streamlit runtime
+    if hasattr(st, 'secrets') and hasattr(st.secrets, '_file_path'):
+        try:
+            GOOGLE_CREDENTIALS_JSON = st.secrets.get("GOOGLE_CREDENTIALS", None)
+            if GOOGLE_CREDENTIALS_JSON:
+                # Write to temp file for gspread to use
+                import tempfile
+                import json as json_lib
+                temp_creds = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                json_lib.dump(json_lib.loads(GOOGLE_CREDENTIALS_JSON), temp_creds)
+                temp_creds.close()
+                CREDENTIALS_PATH = Path(temp_creds.name)
+        except (FileNotFoundError, KeyError, AttributeError):
+            # Secrets file not found or key doesn't exist - use default
+            pass
+except (ImportError, AttributeError, RuntimeError, FileNotFoundError):
+    # Streamlit not available or not in Streamlit context (e.g., when running pipeline.py)
+    # Use default file path
+    pass
 
 # Google Sheets
 MASTER_SHEET_NAME = "NAPE Monitoring & Evaluation Team"  # Update if different
@@ -16,16 +42,29 @@ MASTER_SHEET_URL = ""  # Optional: if you have the direct URL
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Lightweight, good quality
 
 # LLM Settings
-# Option 1: Ollama (local, free)
-USE_OLLAMA = True
+# Option 1: Ollama (local, free) - Only works locally, not on Streamlit Cloud
+USE_OLLAMA = False  # Set to False for Streamlit Cloud deployment
 # Model selection: 
 # - "llama3.1" - Better quality, requires ~4.2 GiB RAM, slower (~60-120s per query)
 # - "llama3.2:3b" - Faster (3-5x), requires ~2-3 GiB RAM, good quality (~15-30s per query)
 OLLAMA_MODEL = "llama3.2:3b"  # Faster model for better performance
 
-# Option 2: Groq API (free tier, fast)
-USE_GROQ = False
+# Option 2: Groq API (free tier, fast) - Recommended for Streamlit Cloud
+USE_GROQ = True  # Set to True for Streamlit Cloud deployment
+# Get API key from environment variable or Streamlit secrets
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+try:
+    import streamlit as st
+    # Check if we're actually in a Streamlit runtime
+    if hasattr(st, 'secrets') and hasattr(st.secrets, '_file_path'):
+        try:
+            GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", GROQ_API_KEY)
+        except (FileNotFoundError, KeyError, AttributeError):
+            # Secrets not available, use environment variable
+            pass
+except (ImportError, AttributeError, RuntimeError, FileNotFoundError):
+    # Streamlit not available, use environment variable
+    pass
 GROQ_MODEL = "llama-3.1-70b-versatile"
 
 # RAG Settings
