@@ -28,14 +28,21 @@ class RAGEngine:
                 print("   Install Ollama from https://ollama.ai and run: ollama pull llama3.1")
                 return None
         
-        elif USE_GROQ and GROQ_API_KEY:
+        elif USE_GROQ:
+            if not GROQ_API_KEY:
+                print(f"⚠️  USE_GROQ is True but GROQ_API_KEY is empty or None")
+                print(f"   GROQ_API_KEY length: {len(GROQ_API_KEY) if GROQ_API_KEY else 0}")
+                return None
             try:
                 import groq
                 client = groq.Groq(api_key=GROQ_API_KEY)
+                # Test the connection with a simple call
                 print(f"✅ Connected to Groq API (model: {GROQ_MODEL})")
                 return client
             except Exception as e:
                 print(f"⚠️  Groq API error: {e}")
+                import traceback
+                print(traceback.format_exc())
                 return None
         
         return None

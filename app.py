@@ -498,7 +498,23 @@ with st.sidebar:
     # Quick stats with better styling - Oil & Gas theme (removed green bar/div)
     st.markdown("#### 📈 Quick Statistics")
     events = st.session_state.storage.get_event_list()
-    total_responses = sum(e['response_count'] for e in events)
+    # Get actual total from database to verify count
+    try:
+        cursor = st.session_state.storage.conn.cursor()
+        cursor.execute("SELECT COUNT(*) as total FROM responses")
+        actual_total = cursor.fetchone()[0]
+        total_responses = sum(e['response_count'] for e in events)
+        
+        # Use actual total from database (more accurate)
+        total_responses = actual_total
+        
+        # Show discrepancy if any (for debugging - only if there's a significant difference)
+        calculated_total = sum(e['response_count'] for e in events)
+        if abs(actual_total - calculated_total) > 0:
+            st.caption(f"ℹ️ Note: {calculated_total:,} responses across events | {actual_total:,} total in database")
+    except Exception:
+        # Fallback to calculated total if database query fails
+        total_responses = sum(e['response_count'] for e in events)
     
     # Use markdown instead of metrics to prevent truncation
     col1, col2 = st.columns(2)
@@ -511,18 +527,36 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Re-initialize RAG Engine if secrets become available
-    if not secrets_status['groq_key'] and st.button("🔄 Re-check Secrets & LLM", use_container_width=True, help="Click if you just added secrets"):
-        # Re-import config to get updated secrets
-        import importlib
-        import config
-        importlib.reload(config)
-        from config import GROQ_API_KEY, USE_GROQ
-        from rag_engine import RAGEngine
-        
-        # Re-initialize RAG engine
-        st.session_state.rag_engine = RAGEngine(st.session_state.storage)
-        st.rerun()
+    # Re-initialize RAG Engine if LLM is not available but secrets are configured
+    llm_available = st.session_state.rag_engine.llm_client is not None
+    if secrets_status['groq_key'] and not llm_available:
+        st.warning("⚠️ LLM not initialized despite API key being configured. Click below to re-initialize.")
+        if st.button("🔄 Re-initialize LLM", type="primary", use_container_width=True, help="Re-initialize the LLM with current API key"):
+            # Re-import config to get updated secrets
+            import importlib
+            import config
+            importlib.reload(config)
+            from rag_engine import RAGEngine
+            
+            # Re-initialize RAG engine
+            st.session_state.rag_engine = RAGEngine(st.session_state.storage)
+            if st.session_state.rag_engine.llm_client:
+                st.success("✅ LLM initialized successfully!")
+            else:
+                st.error("❌ Failed to initialize LLM. Check logs for details.")
+            st.rerun()
+    elif not secrets_status['groq_key']:
+        if st.button("🔄 Re-check Secrets & LLM", use_container_width=True, help="Click if you just added secrets"):
+            # Re-import config to get updated secrets
+            import importlib
+            import config
+            importlib.reload(config)
+            from config import GROQ_API_KEY, USE_GROQ
+            from rag_engine import RAGEngine
+            
+            # Re-initialize RAG engine
+            st.session_state.rag_engine = RAGEngine(st.session_state.storage)
+            st.rerun()
     
     # Manual Data Loading Button
     if total_responses == 0:
