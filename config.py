@@ -14,22 +14,37 @@ CREDENTIALS_PATH = BASE_DIR / "credentials.json"  # Default
 # Only works when running in Streamlit context
 try:
     import streamlit as st
-    # Check if we're actually in a Streamlit runtime
-    if hasattr(st, 'secrets') and hasattr(st.secrets, '_file_path'):
+    # Check if we're in a Streamlit runtime and secrets are available
+    if hasattr(st, 'secrets'):
         try:
-            GOOGLE_CREDENTIALS_JSON = st.secrets.get("GOOGLE_CREDENTIALS", None)
-            if GOOGLE_CREDENTIALS_JSON:
+            # Try to access GOOGLE_CREDENTIALS from secrets
+            # It might be a string (JSON) or already a dict
+            google_creds = st.secrets.get("GOOGLE_CREDENTIALS", None)
+            if google_creds:
                 # Write to temp file for gspread to use
                 import tempfile
                 import json as json_lib
+                import os
+                
+                # Handle both string and dict formats
+                if isinstance(google_creds, str):
+                    # Parse JSON string
+                    creds_dict = json_lib.loads(google_creds)
+                else:
+                    # Already a dict
+                    creds_dict = google_creds
+                
+                # Create temp file
                 temp_creds = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
-                json_lib.dump(json_lib.loads(GOOGLE_CREDENTIALS_JSON), temp_creds)
+                json_lib.dump(creds_dict, temp_creds, indent=2)
                 temp_creds.close()
                 CREDENTIALS_PATH = Path(temp_creds.name)
-        except (FileNotFoundError, KeyError, AttributeError):
-            # Secrets file not found or key doesn't exist - use default
+                print(f"✅ Using credentials from Streamlit secrets (temp file: {CREDENTIALS_PATH})")
+        except (KeyError, AttributeError, TypeError, json_lib.JSONDecodeError) as e:
+            # Secrets key doesn't exist or parsing failed - use default file
+            print(f"⚠️ Could not read GOOGLE_CREDENTIALS from secrets: {e}")
             pass
-except (ImportError, AttributeError, RuntimeError, FileNotFoundError):
+except (ImportError, RuntimeError):
     # Streamlit not available or not in Streamlit context (e.g., when running pipeline.py)
     # Use default file path
     pass

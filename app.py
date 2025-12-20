@@ -472,22 +472,27 @@ with tab1:
     
     # Display example buttons - Equal sized cards
     cols = st.columns(len(example_queries))
+    button_clicked = False
+    clicked_query = None
     for i, example in enumerate(example_queries):
         with cols[i]:
             # Truncate to fit in button while keeping same size
             display_text = example[:25] + "..." if len(example) > 25 else example
             if st.button(f"💡 {display_text}", key=f"example_{i}", use_container_width=True):
-                st.session_state.current_query = example
-                st.session_state.query_submitted = False  # Reset submission flag
-                st.rerun()  # Rerun to update the input field
+                button_clicked = True
+                clicked_query = example
     
-    # Query input - use session state
+    # If a button was clicked, update session state and rerun
+    if button_clicked and clicked_query:
+        st.session_state.current_query = clicked_query
+        st.rerun()
+    
+    # Query input - use session state (no key to avoid caching issues)
     query = st.text_input(
         "Enter your question:", 
         value=st.session_state.current_query,
         placeholder="e.g., What did attendees think about the technical sessions?",
-        label_visibility="visible",
-        key="query_input"
+        label_visibility="visible"
     )
     
     # Update session state when user types
