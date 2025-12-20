@@ -1,0 +1,33 @@
+# Data Processing
+pandas>=2.0,<3.0
+numpy>=1.26.0,<2.0  # Streamlit requires numpy<2
+
+# Google Sheets API
+gspread==6.1.2
+google-auth==2.25.2
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+
+# Database & Storage
+chromadb==0.4.22
+# Note: sqlite3 is built-in to Python, no installation needed
+
+# Embeddings
+sentence-transformers>=5.0.0
+# PyTorch - pin to stable version to avoid meta tensor issues in 2.9+
+torch>=2.0.0,<2.4.0
+
+# LLM
+ollama==0.1.7
+# Alternative (if using Groq API):
+# groq==0.4.2
+
+# Web Interface
+streamlit==1.29.0
+plotly==5.18.0
+
+# Utilities
+python-dotenv==1.0.0
+pydantic==2.5.3
+Pillow>=10.0.0  # For image processing (header image)
+

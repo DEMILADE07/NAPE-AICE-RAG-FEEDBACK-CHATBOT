@@ -1,0 +1,419 @@
+"""Data ingestion module for Google Forms responses"""
+import gspread
+from google.oauth2.service_account import Credentials
+import pandas as pd
+from typing import List, Dict, Optional
+import re
+import time
+from datetime import datetime
+from config import CREDENTIALS_PATH, MASTER_SHEET_NAME, EVENT_CATEGORIES
+
+
+class DataIngestion:
+    """Handles data collection from Google Sheets"""
+    
+    def __init__(self):
+        self.client = None
+        self.master_sheet = None
+        self._authenticate()
+    
+    def _authenticate(self):
+        """Authenticate with Google Sheets API"""
+        try:
+            scope = [
+                'https://www.googleapis.com/auth/spreadsheets.readonly',
+                'https://www.googleapis.com/auth/drive.readonly'
+            ]
+            creds = Credentials.from_service_account_file(
+                str(CREDENTIALS_PATH), scopes=scope
+            )
+            self.client = gspread.authorize(creds)
+            print("✅ Authenticated with Google Sheets API")
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"credentials.json not found at {CREDENTIALS_PATH}. "
+                "Please follow SETUP_GUIDE.md to create it."
+            )
+        except Exception as e:
+            raise Exception(f"Authentication failed: {str(e)}")
+    
+    def _retry_with_backoff(self, func, max_retries=5, initial_delay=2, max_delay=60):
+        """Retry a function with exponential backoff for rate limit errors"""
+        delay = initial_delay
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except Exception as e:
+                error_str = str(e).lower()
+                # Check if it's a rate limit error (429)
+                if '429' in error_str or 'quota' in error_str or 'rate limit' in error_str:
+                    if attempt < max_retries - 1:
+                        wait_time = min(delay, max_delay)
+                        print(f"   ⏳ Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                        time.sleep(wait_time)
+                        delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        print(f"   ❌ Rate limit error after {max_retries} attempts: {str(e)[:100]}")
+                        raise
+                else:
+                    # Not a rate limit error, re-raise immediately
+                    raise
+        return None
+    
+    def get_master_sheet(self):
+        """Get the master tracking sheet"""
+        try:
+            # Try to open by name first
+            self.master_sheet = self.client.open(MASTER_SHEET_NAME)
+            return self.master_sheet
+        except gspread.SpreadsheetNotFound:
+            # If not found, try to search
+            print(f"Sheet '{MASTER_SHEET_NAME}' not found. Searching...")
+            sheets = self.client.list_spreadsheet_files()
+            for sheet in sheets:
+                if MASTER_SHEET_NAME.lower() in sheet['name'].lower():
+                    self.master_sheet = self.client.open_by_key(sheet['id'])
+                    return self.master_sheet
+            raise Exception(f"Could not find sheet: {MASTER_SHEET_NAME}")
+    
+    def get_events_list(self) -> List[Dict]:
+        """Extract events list from master sheet"""
+        if not self.master_sheet:
+            self.get_master_sheet()
+        
+        worksheet = self.master_sheet.sheet1
+        data = worksheet.get_all_records()
+        
+        events = []
+        for row in data:
+            # Handle variations in column names (spaces, typos, etc.)
+            form_link = (row.get('FORM LINK') or row.get('FORM  LINK') or 
+                        row.get('FORM_LINK') or '').strip()
+            event_name = row.get('EVENT', '').strip()
+            
+            if form_link and event_name:
+                events.append({
+                    'event_name': event_name,
+                    'form_link': form_link,
+                    'response_sheet_link': (row.get('RESPONSE SHEET LINK') or 
+                                          row.get('RESPONSE_SHEET_LINK') or '').strip(),
+                    'form_date': row.get('FORM DATE', ''),
+                    'occurrence': (row.get('OCCURRENCE') or row.get('OCCURENCE') or '').strip(),
+                    'form_manager': row.get('FORM MANAGER', ''),
+                    'report_manager': row.get('REPORT MANAGER', ''),
+                    'status': row.get('NOTE ON FORM STATUS', '')
+                })
+        
+        return events
+    
+    def extract_form_id_from_url(self, form_url: str) -> Optional[str]:
+        """Extract Google Form ID from URL"""
+        # Handle different URL formats
+        patterns = [
+            r'forms\.gle/([a-zA-Z0-9_-]+)',
+            r'/d/([a-zA-Z0-9_-]+)',
+            r'formId=([a-zA-Z0-9_-]+)'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, form_url)
+            if match:
+                return match.group(1)
+        return None
+    
+    def get_form_responses(self, form_url: str, event_name: str, response_sheet_link: str = None) -> Optional[pd.DataFrame]:
+        """Get responses from a Google Form via its linked Google Sheet"""
+        try:
+            # Method 1: Use direct response sheet link if provided (BEST METHOD)
+            if response_sheet_link:
+                try:
+                    def _get_sheet_data():
+                        sheet = self.client.open_by_url(response_sheet_link)
+                        worksheet = sheet.sheet1
+                        return worksheet.get_all_records()
+                    
+                    data = self._retry_with_backoff(_get_sheet_data)
+                    
+                    if data:
+                        df = pd.DataFrame(data)
+                        df['event_name'] = event_name
+                        df['form_url'] = form_url
+                        df['extracted_at'] = datetime.now().isoformat()
+                        return df
+                except Exception as e:
+                    print(f"   ⚠️  Could not access response sheet link: {str(e)}")
+            
+            # Method 2: Try to find sheet by event name with smart matching
+            try:
+                # Get all sheets with retry
+                def _list_sheets():
+                    return self.client.list_spreadsheet_files()
+                
+                all_sheets = self._retry_with_backoff(_list_sheets)
+                if not all_sheets:
+                    raise Exception("Could not list spreadsheet files")
+                
+                # Normalize event name for matching
+                event_lower = event_name.lower()
+                # Handle special cases/abbreviations and variations
+                event_variations = [event_lower]
+                
+                # Abbreviations (check for both full name and abbreviation)
+                if 'field trip' in event_lower and 'virtual' in event_lower:
+                    event_variations.extend(['vft', 'virtual field trip', 'field trip'])
+                elif 'vft' in event_lower:
+                    event_variations.extend(['vft', 'virtual field trip'])
+                
+                if 'basin evaluation' in event_lower and 'competition' in event_lower:
+                    # Prioritize BEC abbreviation
+                    event_variations = ['bec'] + event_variations + ['basin evaluation competition']
+                elif 'bec' in event_lower:
+                    event_variations.extend(['bec', 'basin evaluation'])
+                
+                # Typos and variations
+                if 'registeration' in event_lower:
+                    event_variations.append('registration')
+                if 'accommodation' in event_lower:
+                    # Prioritize common variations
+                    event_variations = ['accommodation', 'accomodation'] + event_variations
+                if 'feeding' in event_lower:
+                    # Prioritize exact match
+                    event_variations = ['feeding'] + event_variations
+                if 'transportation' in event_lower:
+                    # Prioritize exact match
+                    event_variations = ['transportation', 'transport'] + event_variations
+                if 'exhibition' in event_lower and 'exhibitions' not in event_lower:
+                    event_variations.append('exhibitions')  # Sheet uses plural
+                if 'poster session' in event_lower:
+                    event_variations.extend(['poster presentation', 'poster session'])
+                if 'management session' in event_lower and 'executive' not in event_lower:
+                    # For regular "MANAGEMENT SESSION", prioritize plural form at the very front
+                    # This ensures it matches "MANAGEMENT SESSIONS" (123 responses) over "Executive Management Session" (6 responses)
+                    event_variations = ['management sessions'] + [v for v in event_variations if 'executive' not in v]
+                elif 'executive management' in event_lower:
+                    # For "EXECUTIVE MANAGEMENT SESSION", prioritize that
+                    event_variations = ['executive management'] + event_variations
+                if 'awards' in event_lower and 'recognition' in event_lower:
+                    event_variations.append('awards & recognition')
+                if 'african nite' in event_lower or 'african night' in event_lower:
+                    event_variations.extend(['african nite', 'african night'])
+                if 'committee feedback' in event_lower:
+                    event_variations.extend(['committee feedback', 'committee'])
+                
+                # Score and rank matches
+                matches = []
+                for sheet_info in all_sheets:
+                    sheet_name = sheet_info['name'].lower()
+                    score = 0
+                    
+                    # Skip the master sheet
+                    if 'monitoring' in sheet_name and 'evaluation' in sheet_name:
+                        continue
+                    
+                    # Exact match (highest priority)
+                    for idx, variation in enumerate(event_variations):
+                        if variation in sheet_name:
+                            # Calculate match quality - earlier in list = higher priority
+                            priority_bonus = (len(event_variations) - idx) * 5
+                            
+                            # Penalize matches with "executive" if event name doesn't have it
+                            penalty = 0
+                            if 'executive' in sheet_name and 'executive' not in event_lower:
+                                penalty = 50  # Heavy penalty to avoid wrong match
+                            
+                            if variation == event_lower:
+                                score = 100 + priority_bonus - penalty  # Perfect match
+                            elif len(variation) > 8:  # Longer variations are more specific
+                                score = 90 + priority_bonus - penalty  # Very good match
+                            elif len(variation) > 5:
+                                score = 80 + priority_bonus - penalty  # Good partial match
+                            else:
+                                score = 60 + priority_bonus - penalty  # Partial match (abbreviations)
+                            break
+                    
+                    # If no match yet, try key words (but be more selective)
+                    if score == 0:
+                        # Only use meaningful words (not common ones like "forum", "night", etc.)
+                        common_words = {'forum', 'night', 'session', 'event', 'feedback', 'form', 'responses', 'aice', 'nape', '43rd'}
+                        event_words = [w for w in event_lower.split() if len(w) > 3 and w not in common_words]
+                        
+                        if event_words:
+                            matched_words = sum(1 for word in event_words if word in sheet_name)
+                            if matched_words > 0:
+                                # For single-word events (like ACCOMMODATION, FEEDING, TRANSPORTATION),
+                                # be more lenient - accept if the word is long enough (>8 chars) or if it's an exact match
+                                # For multi-word events, require at least 2 words or 1 very specific word
+                                if len(event_words) == 1:
+                                    # Single-word event: accept if word is found and is substantial
+                                    if len(event_words[0]) > 8 or event_words[0] in sheet_name:
+                                        score = 40  # Moderate match for single-word events
+                                elif matched_words >= 2 or (matched_words == 1 and len(event_words[0]) > 8):
+                                    score = 30  # Weak match for multi-word events
+                    
+                    # Final fallback: Check if the entire event name (as a word) appears in sheet name
+                    # This catches cases like "ACCOMMODATION FEEDBACK", "FEEDING FORM", etc.
+                    if score == 0:
+                        # Check if event name appears as a whole word in sheet name
+                        event_word_pattern = r'\b' + re.escape(event_lower) + r'\b'
+                        if re.search(event_word_pattern, sheet_name):
+                            score = 35  # Fallback match
+                    
+                    if score > 0:
+                        matches.append({
+                            'sheet_info': sheet_info,
+                            'score': score,
+                            'name': sheet_info['name']
+                        })
+                
+                # Sort by score (highest first) and try the best match
+                if matches:
+                    matches.sort(key=lambda x: x['score'], reverse=True)
+                    best_match = matches[0]
+                    
+                    # Debug: Show top matches for troubleshooting
+                    if len(matches) > 0 and best_match['score'] < 50:
+                        # Low score match - show what we found
+                        top_3 = matches[:3]
+                        print(f"   🔍 Found potential matches (top 3):")
+                        for m in top_3:
+                            print(f"      - '{m['name']}' (score: {m['score']})")
+                    
+                    # Try all matches in order until one works
+                    last_error = None
+                    for match_idx, match in enumerate(matches[:5]):  # Try top 5 matches
+                        try:
+                            def _get_sheet_data():
+                                matching_sheet = self.client.open_by_key(match['sheet_info']['id'])
+                                worksheet = matching_sheet.sheet1
+                                
+                                # Handle duplicate headers (some sheets like BEC have this issue)
+                                try:
+                                    return worksheet.get_all_records()
+                                except Exception as e:
+                                    if 'not unique' in str(e).lower() or 'header' in str(e).lower():
+                                        # Get headers and make them unique
+                                        headers = worksheet.row_values(1)
+                                        unique_headers = []
+                                        seen = {}
+                                        for h in headers:
+                                            if h in seen:
+                                                seen[h] += 1
+                                                unique_headers.append(f"{h}_{seen[h]}")
+                                            else:
+                                                seen[h] = 0
+                                                unique_headers.append(h)
+                                        # Get data manually
+                                        rows = worksheet.get_all_values()[1:]  # Skip header
+                                        return [dict(zip(unique_headers, row)) for row in rows if any(row)]
+                                    else:
+                                        raise
+                            
+                            data = self._retry_with_backoff(_get_sheet_data)
+                            
+                            if data:
+                                df = pd.DataFrame(data)
+                                df['event_name'] = event_name
+                                df['form_url'] = form_url
+                                df['extracted_at'] = datetime.now().isoformat()
+                                return df
+                            else:
+                                # Empty sheet - try next match
+                                if match_idx == 0:
+                                    print(f"   ⚠️  Matched sheet '{match['name']}' but it's empty, trying next match...")
+                                continue
+                        except Exception as e:
+                            last_error = str(e)
+                            # If this was the first match, show debug info
+                            if match_idx == 0:
+                                error_msg = str(e).lower()
+                                if 'permission' in error_msg or 'access' in error_msg:
+                                    print(f"   ⚠️  Cannot access matched sheet '{match['name']}': Permission denied")
+                                elif 'not found' in error_msg:
+                                    print(f"   ⚠️  Matched sheet '{match['name']}' not found, trying next match...")
+                                # For other errors, try next match silently
+                            continue
+                    
+                    # If we get here, all matches failed
+                    if last_error:
+                        print(f"   ⚠️  All {len(matches)} potential matches failed. Last error: {last_error[:100]}")
+            except Exception as e:
+                pass
+            
+            print(f"⚠️  Could not find response sheet for {event_name}")
+            print(f"   💡 Tip: Add 'RESPONSE SHEET LINK' column to master sheet with direct sheet URLs")
+            return None
+                
+        except Exception as e:
+            print(f"❌ Error processing {event_name}: {str(e)}")
+            return None
+    
+    def categorize_event(self, event_name: str) -> str:
+        """Categorize event based on name"""
+        event_lower = event_name.lower()
+        
+        for category, keywords in EVENT_CATEGORIES.items():
+            if category == "Other":
+                continue
+            for keyword in keywords:
+                if keyword.lower() in event_lower:
+                    return category
+        
+        return "Other"
+    
+    def collect_all_responses(self) -> pd.DataFrame:
+        """Collect responses from all forms"""
+        events = self.get_events_list()
+        all_responses = []
+        events_with_responses = {}
+        events_without_responses = []
+        
+        print(f"\n📊 Found {len(events)} events to process\n")
+        
+        for i, event in enumerate(events, 1):
+            event_name = event['event_name']
+            form_url = event['form_link']
+            response_sheet_link = event.get('response_sheet_link', '')
+            
+            print(f"[{i}/{len(events)}] Processing: {event_name}")
+            
+            df = self.get_form_responses(form_url, event_name, response_sheet_link)
+            
+            if df is not None and not df.empty:
+                df['event_category'] = self.categorize_event(event_name)
+                df['form_date'] = event['form_date']
+                df['occurrence'] = event['occurrence']
+                all_responses.append(df)
+                events_with_responses[event_name] = len(df)
+                print(f"  ✅ Collected {len(df)} responses")
+            else:
+                events_without_responses.append(event_name)
+                print(f"  ⚠️  No responses found for {event_name} (event will still be tracked)")
+            
+            # Add a small delay between events to avoid hitting rate limits
+            # Google Sheets API allows ~60 requests per minute, so ~1 second delay is safe
+            if i < len(events):  # Don't delay after the last event
+                time.sleep(1)
+        
+        if not all_responses:
+            raise Exception("No responses collected from any form!")
+        
+        combined_df = pd.concat(all_responses, ignore_index=True)
+        print(f"\n✅ Total responses collected: {len(combined_df)}")
+        print(f"✅ Collected from {len(events_with_responses)} events with responses")
+        print(f"⚠️  {len(events_without_responses)} events had no responses")
+        
+        # Print summary
+        if events_without_responses:
+            print(f"\n📋 Events without responses: {', '.join(events_without_responses)}")
+        
+        return combined_df
+
+
+if __name__ == "__main__":
+    # Test the ingestion
+    ingester = DataIngestion()
+    df = ingester.collect_all_responses()
+    print(f"\n📋 Sample data:\n{df.head()}")
+    print(f"\n📊 Columns: {df.columns.tolist()}")
+

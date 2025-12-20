@@ -1,0 +1,81 @@
+# Credentials & Secrets
+credentials.json
+.env
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Database & Data Files
+*.db
+*.sqlite
+*.sqlite3
+chroma_db/
+*.csv
+*.xlsx
+*.xls
+
+# Test & Debug Files
+test_*.py
+debug_*.py
+check_*.py
+chat.py  # Old chat interface, not used in production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Streamlit
+.streamlit/
+.streamlit/secrets.toml
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Jupyter Notebooks (if any)
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment variables
+.env.local
+.env.*.local
+
+# Markdown files
+QUICK_START.md
+DEPLOYMENT.md
+DEPLOYMENT_CHECKLIST.md
+SETUP_GUIDE.md
+ALTERNATIVE_SETUP.md
+GITHUB_SETUP.md
+PERFORMANCE_TIPS.md
+
+
+
