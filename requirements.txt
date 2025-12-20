@@ -31,6 +31,8 @@ plotly==5.18.0
 
 # Utilities
 python-dotenv==1.0.0
-pydantic==2.5.3
+# Pydantic: Upgrade to version compatible with Python 3.13
+# pydantic-core 2.14.6 (from pydantic 2.5.3) doesn't support Python 3.13
+pydantic>=2.9.0
 Pillow>=10.0.0  # For image processing (header image)
 
