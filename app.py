@@ -23,6 +23,31 @@ st.set_page_config(
 if 'storage' not in st.session_state:
     st.session_state.storage = StorageManager()
     st.session_state.rag_engine = RAGEngine(st.session_state.storage)
+    st.session_state.data_loaded = False
+
+# Auto-load data on startup if database is empty
+if not st.session_state.data_loaded:
+    events = st.session_state.storage.get_event_list()
+    if not events or len(events) == 0 or all(e.get('response_count', 0) == 0 for e in events):
+        # Database is empty, try to load data
+        try:
+            from pipeline import process_and_store_data
+            
+            with st.spinner("🔄 Loading data from Google Sheets... This may take a few minutes."):
+                # Run the data pipeline
+                success, message = process_and_store_data(st.session_state.storage)
+                st.session_state.data_loaded = True
+                if success:
+                    st.success(f"✅ {message}")
+                    st.rerun()
+                else:
+                    st.warning(f"⚠️ {message}. Please ensure Google Sheets credentials are configured in Streamlit secrets.")
+        except Exception as e:
+            # If loading fails, mark as attempted so we don't retry infinitely
+            st.session_state.data_loaded = True
+            st.warning(f"⚠️ Could not auto-load data: {str(e)}. Please ensure Google Sheets credentials are configured.")
+    else:
+        st.session_state.data_loaded = True
 
 # Enhanced Custom CSS with animations
 st.markdown("""
@@ -453,6 +478,7 @@ with tab1:
             display_text = example[:25] + "..." if len(example) > 25 else example
             if st.button(f"💡 {display_text}", key=f"example_{i}", use_container_width=True):
                 st.session_state.current_query = example
+                st.session_state.query_submitted = False  # Reset submission flag
                 st.rerun()  # Rerun to update the input field
     
     # Query input - use session state
@@ -473,9 +499,9 @@ with tab1:
         ask_button = st.button("🔍 Ask", type="primary", use_container_width=True)
     
     if ask_button and query:
-        # Clear the query from session state after processing
-        query_to_process = st.session_state.current_query
-        st.session_state.current_query = ''  # Clear after use
+        # Use the current query value
+        query_to_process = query.strip()
+        # Don't clear immediately - let it stay in the input for user reference
         
         # Progress tracking
         progress_bar = st.progress(0)

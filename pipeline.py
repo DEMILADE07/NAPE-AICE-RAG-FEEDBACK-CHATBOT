@@ -5,6 +5,52 @@ from storage import StorageManager
 import sys
 
 
+def process_and_store_data(storage=None):
+    """
+    Run the complete data pipeline and store data.
+    Can be called from Streamlit app or standalone.
+    
+    Args:
+        storage: Optional StorageManager instance. If None, creates a new one.
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        # Step 1: Ingest data from Google Sheets
+        ingester = DataIngestion()
+        
+        # Get all events first (including those without responses)
+        all_events = ingester.get_events_list()
+        # Add event_category to each event
+        for event in all_events:
+            event['event_category'] = ingester.categorize_event(event['event_name'])
+        
+        # Collect responses
+        df = ingester.collect_all_responses()
+        
+        if df.empty:
+            return False, "No data collected from Google Sheets"
+        
+        # Step 2: Process data
+        processor = DataProcessor()
+        records = processor.create_response_records(df)
+        processed = processor.process_dataframe(df)
+        
+        # Step 3: Store data
+        if storage is None:
+            storage = StorageManager()
+        storage.store_responses(records, all_events=all_events)
+        storage.update_ratings_summary(processed)
+        
+        return True, f"Successfully loaded {len(records)} responses from {len(df['event_name'].unique())} events"
+        
+    except FileNotFoundError as e:
+        return False, f"Credentials not found: {str(e)}"
+    except Exception as e:
+        return False, f"Error loading data: {str(e)}"
+
+
 def main():
     """Run the complete data pipeline"""
     print("=" * 60)

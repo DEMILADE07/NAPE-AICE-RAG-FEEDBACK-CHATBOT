@@ -53,17 +53,20 @@ OLLAMA_MODEL = "llama3.2:3b"  # Faster model for better performance
 USE_GROQ = True  # Set to True for Streamlit Cloud deployment
 # Get API key from environment variable or Streamlit secrets
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+# Try to get from Streamlit secrets (for Streamlit Cloud)
 try:
     import streamlit as st
-    # Check if we're actually in a Streamlit runtime
-    if hasattr(st, 'secrets') and hasattr(st.secrets, '_file_path'):
+    if hasattr(st, 'secrets'):
         try:
-            GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", GROQ_API_KEY)
-        except (FileNotFoundError, KeyError, AttributeError):
-            # Secrets not available, use environment variable
+            # Try to access secrets - this will work in Streamlit Cloud
+            secret_key = st.secrets.get("GROQ_API_KEY", None)
+            if secret_key:
+                GROQ_API_KEY = secret_key
+        except (KeyError, AttributeError, TypeError):
+            # Key doesn't exist or secrets not available - use env var
             pass
-except (ImportError, AttributeError, RuntimeError, FileNotFoundError):
-    # Streamlit not available, use environment variable
+except (ImportError, RuntimeError):
+    # Streamlit not available (e.g., when running pipeline.py) - use env var
     pass
 GROQ_MODEL = "llama-3.1-70b-versatile"
 
