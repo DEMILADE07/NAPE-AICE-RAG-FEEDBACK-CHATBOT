@@ -305,7 +305,7 @@ class RAGEngine:
             for i, event in enumerate(events[:20], 1):  # Show top 20 events
                 event_name = event['event_name']
                 response_count = event['response_count']
-                category = event.get('event_category', 'Other')
+                category = event.get('event_category', 'Professional')
                 prompt_parts.append(f"{i}. {event_name} ({category}): {response_count} responses")
             prompt_parts.append("")
             

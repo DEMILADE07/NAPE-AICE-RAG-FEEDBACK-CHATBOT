@@ -363,7 +363,7 @@ class StorageManager:
                         VALUES (?, ?, ?, ?, ?, ?)
                     """, (
                         event_name,
-                        event.get('event_category', 'Other'),
+                        event.get('event_category', 'Professional'),
                         event.get('form_date', ''),
                         event.get('occurrence', ''),
                         response_count,
@@ -665,7 +665,7 @@ class StorageManager:
                 row_dict = dict(row)
                 result.append({
                     'event_name': event_name,
-                    'event_category': row_dict.get('event_category', 'Other'),
+                    'event_category': row_dict.get('event_category', 'Professional'),
                     'response_count': row_dict.get('total_responses', 0)
                 })
         

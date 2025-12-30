@@ -88,7 +88,7 @@ class DataProcessor:
                         comments.append({
                             'response_id': f"{row.get('event_name', 'unknown')}_{idx}",
                             'event_name': row.get('event_name', 'Unknown'),
-                            'event_category': row.get('event_category', 'Other'),
+                            'event_category': row.get('event_category', 'Professional'),
                             'comment_text': str(comment_text).strip(),
                             'timestamp': row.get('Timestamp', row.get('extracted_at', datetime.now().isoformat())),
                             'source_column': col
@@ -208,7 +208,7 @@ class DataProcessor:
             record = {
                 'response_id': f"{row.get('event_name', 'unknown')}_{idx}_{abs(timestamp_hash)}",
                 'event_name': row.get('event_name', 'Unknown'),
-                'event_category': row.get('event_category', 'Other'),
+                'event_category': row.get('event_category', 'Professional'),
                 'form_date': row.get('form_date', ''),
                 'occurrence': row.get('occurrence', ''),
                 'timestamp': row.get('Timestamp', row.get('extracted_at', datetime.now().isoformat())),

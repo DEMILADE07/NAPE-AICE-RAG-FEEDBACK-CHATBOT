@@ -335,9 +335,10 @@ class DataIngestion:
                     event_variations = ['transportation', 'transport'] + event_variations
                 if 'exhibition' in event_lower and 'exhibitions' not in event_lower:
                     event_variations.append('exhibitions')  # Sheet uses plural
-                if 'poster session' in event_lower:
+                if 'poster session' in event_lower or 'poster presentation' in event_lower:
                     # Prioritize "poster presentation" as that's what the form uses
-                    event_variations = ['poster presentation', 'poster session'] + event_variations
+                    # The form name is "NAPE 43rd AICE POSTER PRESENTATION FEEDBACK FORM"
+                    event_variations = ['poster presentation', 'poster session', 'poster'] + event_variations
                 if 'management session' in event_lower and 'executive' not in event_lower:
                     # For regular "MANAGEMENT SESSION", prioritize plural form at the very front
                     # This ensures it matches "MANAGEMENT SESSIONS" (123 responses) over "Executive Management Session" (6 responses)
@@ -502,18 +503,26 @@ class DataIngestion:
                     if last_error:
                         print(f"   ⚠️  All {len(matches)} potential matches failed. Last error: {last_error[:100]}")
                     
-                    # Special debug for ALUMNI REUNION - show all sheets with "alumni" or "reunion"
+                    # Special debug for specific events - show all matching sheets
+                    debug_keywords = []
                     if 'alumni' in event_lower or 'reunion' in event_lower:
-                        print(f"   🔍 Debug: Searching for sheets containing 'alumni' or 'reunion'...")
+                        debug_keywords = ['alumni', 'reunion']
+                    elif 'poster' in event_lower:
+                        debug_keywords = ['poster', 'presentation']
+                    elif 'all' in event_lower and 'convention' in event_lower and 'luncheon' in event_lower:
+                        debug_keywords = ['all', 'convention', 'luncheon']
+                    
+                    if debug_keywords:
+                        print(f"   🔍 Debug: Searching for sheets containing {', '.join(debug_keywords)}...")
                         try:
                             all_sheets_debug = self._retry_with_backoff(_list_sheets)
-                            matching_sheets = [s for s in all_sheets_debug if 'alumni' in s['name'].lower() or 'reunion' in s['name'].lower()]
+                            matching_sheets = [s for s in all_sheets_debug if any(kw in s['name'].lower() for kw in debug_keywords)]
                             if matching_sheets:
-                                print(f"   📋 Found {len(matching_sheets)} sheet(s) with 'alumni' or 'reunion':")
+                                print(f"   📋 Found {len(matching_sheets)} sheet(s) with {', '.join(debug_keywords)}:")
                                 for sheet in matching_sheets[:5]:
                                     print(f"      - '{sheet['name']}'")
                             else:
-                                print(f"   ⚠️  No sheets found containing 'alumni' or 'reunion'")
+                                print(f"   ⚠️  No sheets found containing {', '.join(debug_keywords)}")
                         except Exception as debug_e:
                             print(f"   ⚠️  Could not list sheets for debug: {str(debug_e)[:100]}")
             except Exception as e:
@@ -532,13 +541,12 @@ class DataIngestion:
         event_lower = event_name.lower()
         
         for category, keywords in EVENT_CATEGORIES.items():
-            if category == "Other":
-                continue
             for keyword in keywords:
                 if keyword.lower() in event_lower:
                     return category
         
-        return "Other"
+        # Default to Professional if no match found (most events are professional)
+        return "Professional"
     
     def collect_all_responses(self) -> pd.DataFrame:
         """Collect responses from all forms"""
