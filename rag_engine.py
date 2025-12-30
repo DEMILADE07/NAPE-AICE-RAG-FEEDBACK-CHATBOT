@@ -54,7 +54,9 @@ class RAGEngine:
         # Quantitative queries (ratings, averages, counts)
         quantitative_keywords = [
             'average', 'avg', 'mean', 'rating', 'score', 'how many',
-            'count', 'total', 'percentage', 'percent', 'statistics', 'stats'
+            'count', 'total', 'percentage', 'percent', 'statistics', 'stats',
+            'most', 'least', 'highest', 'lowest', 'which event', 'top', 'bottom',
+            'more', 'fewer', 'responses'
         ]
         
         # Qualitative queries (comments, feedback, opinions)
@@ -173,6 +175,24 @@ class RAGEngine:
             category=category_filter
         )
         
+        # Add event response counts if query is about events/responses
+        # Check if query asks about response counts, most/least responses, etc.
+        response_count_keywords = ['most', 'least', 'highest', 'lowest', 'which event', 
+                                   'top', 'bottom', 'more responses', 'fewer responses',
+                                   'most responses', 'least responses', 'how many responses']
+        if any(kw in query_lower for kw in response_count_keywords) or 'response' in query_lower and ('most' in query_lower or 'least' in query_lower or 'which' in query_lower):
+            # Get all events with response counts
+            events = self.storage.get_event_list()
+            stats['events'] = events
+            stats['total_events'] = len(events)
+            stats['total_responses'] = sum(e['response_count'] for e in events)
+            
+            # Sort by response count for easy access
+            events_sorted = sorted(events, key=lambda x: x['response_count'], reverse=True)
+            stats['events_by_response_count'] = events_sorted
+            stats['event_with_most_responses'] = events_sorted[0] if events_sorted else None
+            stats['event_with_least_responses'] = events_sorted[-1] if events_sorted else None
+        
         # If query mentions hotels, add hotel-specific data
         if 'hotel' in query_lower:
             # Auto-detect accommodation if hotel is mentioned
@@ -271,6 +291,35 @@ class RAGEngine:
             prompt_parts.append("CRITICAL INSTRUCTION: When asked 'how many hotels were used in total' or similar questions about the total number of hotels, the answer is ALWAYS 17. All 17 hotels were used for accommodation during the conference, regardless of whether they received feedback responses.")
             prompt_parts.append("")
         
+        # Add event response counts if available (for queries about most/least responses)
+        if context.get('stats') and context['stats'].get('events'):
+            prompt_parts.append("EVENT RESPONSE COUNTS:")
+            events = context['stats'].get('events_by_response_count', context['stats']['events'])
+            total_responses = context['stats'].get('total_responses', 0)
+            total_events = context['stats'].get('total_events', 0)
+            
+            prompt_parts.append(f"Total events: {total_events}")
+            prompt_parts.append(f"Total responses across all events: {total_responses}")
+            prompt_parts.append("")
+            prompt_parts.append("Events sorted by response count (highest to lowest):")
+            for i, event in enumerate(events[:20], 1):  # Show top 20 events
+                event_name = event['event_name']
+                response_count = event['response_count']
+                category = event.get('event_category', 'Other')
+                prompt_parts.append(f"{i}. {event_name} ({category}): {response_count} responses")
+            prompt_parts.append("")
+            
+            # Highlight most and least
+            if context['stats'].get('event_with_most_responses'):
+                most = context['stats']['event_with_most_responses']
+                prompt_parts.append(f"EVENT WITH MOST RESPONSES: {most['event_name']} with {most['response_count']} responses")
+            if context['stats'].get('event_with_least_responses'):
+                least = context['stats']['event_with_least_responses']
+                # Only show if it's not zero (to avoid showing events with no responses)
+                if least['response_count'] > 0:
+                    prompt_parts.append(f"EVENT WITH LEAST RESPONSES (excluding zero): {least['event_name']} with {least['response_count']} responses")
+            prompt_parts.append("")
+        
         # Add structured data if available
         if context.get('stats') and context['stats'].get('ratings'):
             prompt_parts.append("STRUCTURED DATA (Ratings & Statistics):")
@@ -346,11 +395,13 @@ class RAGEngine:
             "- If the data doesn't contain enough information, say so. "
             "- For quantitative questions, cite specific numbers and calculations. "
             "- For qualitative questions, summarize key themes and patterns. "
+            "- When asked about which event had the most/least responses, use the EVENT RESPONSE COUNTS section above. "
             "- When asked 'How many hotels were used in total?' or similar questions about total hotel count, the answer is 17 (all hotels that were available/used). "
             "- When asked about hotels, check ALL hotels in the HOTEL-SPECIFIC DATA section. "
             "- For questions about complaints/problems, review all hotels' comments, not just one. "
             "- Be objective and professional. "
-            "- If hotel-specific data is provided, use it to answer hotel-related questions accurately."
+            "- If hotel-specific data is provided, use it to answer hotel-related questions accurately. "
+            "- If event response counts are provided, use them to answer questions about which events had the most/least responses."
         )
         
         return "\n".join(prompt_parts)
@@ -375,7 +426,16 @@ class RAGEngine:
         
         # Retrieve relevant data
         feedback = self._retrieve_relevant_feedback(user_query, query_info)
-        stats = self._get_structured_data(query_info, user_query) if query_info['is_quantitative'] or query_info['is_hybrid'] else None
+        
+        # Always get structured data if query is quantitative, hybrid, or asks about events/responses
+        query_lower = user_query.lower()
+        needs_event_data = (
+            query_info['is_quantitative'] or 
+            query_info['is_hybrid'] or
+            ('event' in query_lower and 'response' in query_lower) or
+            any(kw in query_lower for kw in ['most', 'least', 'highest', 'lowest', 'which event', 'top', 'bottom'])
+        )
+        stats = self._get_structured_data(query_info, user_query) if needs_event_data else None
         
         # Build context
         context = {
