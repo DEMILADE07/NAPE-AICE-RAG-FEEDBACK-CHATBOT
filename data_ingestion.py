@@ -335,9 +335,13 @@ class DataIngestion:
                     event_variations = ['transportation', 'transport'] + event_variations
                 if 'exhibition' in event_lower and 'exhibitions' not in event_lower:
                     event_variations.append('exhibitions')  # Sheet uses plural
-                if 'poster session' in event_lower or 'poster presentation' in event_lower:
+                if 'poster session' in event_lower:
+                    # Event name is "POSTER SESSION" but sheet name is "POSTER PRESENTATION"
                     # Prioritize "poster presentation" as that's what the form uses
                     # The form name is "NAPE 43rd AICE POSTER PRESENTATION FEEDBACK FORM"
+                    event_variations = ['poster presentation', 'poster session', 'poster'] + event_variations
+                elif 'poster presentation' in event_lower:
+                    # If event name already has "poster presentation", keep it
                     event_variations = ['poster presentation', 'poster session', 'poster'] + event_variations
                 if 'management session' in event_lower and 'executive' not in event_lower:
                     # For regular "MANAGEMENT SESSION", prioritize plural form at the very front
@@ -369,26 +373,31 @@ class DataIngestion:
                     if 'monitoring' in sheet_name and 'evaluation' in sheet_name:
                         continue
                     
-                    # Exact match (highest priority)
-                    for idx, variation in enumerate(event_variations):
-                        if variation in sheet_name:
-                            # Calculate match quality - earlier in list = higher priority
-                            priority_bonus = (len(event_variations) - idx) * 5
-                            
-                            # Penalize matches with "executive" if event name doesn't have it
-                            penalty = 0
-                            if 'executive' in sheet_name and 'executive' not in event_lower:
-                                penalty = 50  # Heavy penalty to avoid wrong match
-                            
-                            if variation == event_lower:
-                                score = 100 + priority_bonus - penalty  # Perfect match
-                            elif len(variation) > 8:  # Longer variations are more specific
-                                score = 90 + priority_bonus - penalty  # Very good match
-                            elif len(variation) > 5:
-                                score = 80 + priority_bonus - penalty  # Good partial match
-                            else:
-                                score = 60 + priority_bonus - penalty  # Partial match (abbreviations)
-                            break
+                    # Special case: POSTER SESSION should match POSTER PRESENTATION sheets
+                    # This must be checked first and take precedence
+                    if 'poster session' in event_lower and 'poster presentation' in sheet_name:
+                        score = 100  # Maximum score for this specific case
+                    # Exact match (highest priority) - only if special case didn't match
+                    if score == 0:
+                        for idx, variation in enumerate(event_variations):
+                            if variation in sheet_name:
+                                # Calculate match quality - earlier in list = higher priority
+                                priority_bonus = (len(event_variations) - idx) * 5
+                                
+                                # Penalize matches with "executive" if event name doesn't have it
+                                penalty = 0
+                                if 'executive' in sheet_name and 'executive' not in event_lower:
+                                    penalty = 50  # Heavy penalty to avoid wrong match
+                                
+                                if variation == event_lower:
+                                    score = 100 + priority_bonus - penalty  # Perfect match
+                                elif len(variation) > 8:  # Longer variations are more specific
+                                    score = 90 + priority_bonus - penalty  # Very good match
+                                elif len(variation) > 5:
+                                    score = 80 + priority_bonus - penalty  # Good partial match
+                                else:
+                                    score = 60 + priority_bonus - penalty  # Partial match (abbreviations)
+                                break
                     
                     # If no match yet, try key words (but be more selective)
                     if score == 0:
