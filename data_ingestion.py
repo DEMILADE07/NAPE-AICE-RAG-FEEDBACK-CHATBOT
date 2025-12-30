@@ -336,7 +336,8 @@ class DataIngestion:
                 if 'exhibition' in event_lower and 'exhibitions' not in event_lower:
                     event_variations.append('exhibitions')  # Sheet uses plural
                 if 'poster session' in event_lower:
-                    event_variations.extend(['poster presentation', 'poster session'])
+                    # Prioritize "poster presentation" as that's what the form uses
+                    event_variations = ['poster presentation', 'poster session'] + event_variations
                 if 'management session' in event_lower and 'executive' not in event_lower:
                     # For regular "MANAGEMENT SESSION", prioritize plural form at the very front
                     # This ensures it matches "MANAGEMENT SESSIONS" (123 responses) over "Executive Management Session" (6 responses)
@@ -346,6 +347,9 @@ class DataIngestion:
                     event_variations = ['executive management'] + event_variations
                 if 'awards' in event_lower and 'recognition' in event_lower:
                     event_variations.append('awards & recognition')
+                if 'all' in event_lower and 'convention' in event_lower and 'luncheon' in event_lower:
+                    # Handle "ALL - CONVENTION LUNCHEON" (with space and hyphen) vs "ALL-CONVENTION LUNCHEON" (no space)
+                    event_variations = ['all-convention luncheon', 'all convention luncheon', 'all - convention luncheon'] + event_variations
                 if 'african nite' in event_lower or 'african night' in event_lower:
                     event_variations.extend(['african nite', 'african night'])
                 if 'committee feedback' in event_lower:
