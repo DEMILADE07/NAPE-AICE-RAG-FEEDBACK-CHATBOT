@@ -1,5 +1,6 @@
 """Configuration settings for NAPE RAG Chatbot"""
 import os
+import json as json_lib
 from pathlib import Path
 
 # Paths
@@ -19,12 +20,15 @@ try:
         try:
             # Try to access GOOGLE_CREDENTIALS from secrets
             # It might be a string (JSON) or already a dict
-            google_creds = st.secrets.get("GOOGLE_CREDENTIALS", None)
+            # Note: st.secrets.get() may raise FileNotFoundError if secrets file doesn't exist
+            try:
+                google_creds = st.secrets.get("GOOGLE_CREDENTIALS", None)
+            except (FileNotFoundError, AttributeError, RuntimeError):
+                # Not in Streamlit runtime or secrets file doesn't exist
+                google_creds = None
             if google_creds:
                 # Write to temp file for gspread to use
                 import tempfile
-                import json as json_lib
-                import os
                 
                 # Handle both string and dict formats
                 if isinstance(google_creds, str):
@@ -129,7 +133,12 @@ try:
     if hasattr(st, 'secrets'):
         try:
             # Try to access secrets - this will work in Streamlit Cloud
-            secret_key = st.secrets.get("GROQ_API_KEY", None)
+            # Note: st.secrets.get() may raise FileNotFoundError if secrets file doesn't exist
+            try:
+                secret_key = st.secrets.get("GROQ_API_KEY", None)
+            except (FileNotFoundError, AttributeError, RuntimeError):
+                # Not in Streamlit runtime or secrets file doesn't exist
+                secret_key = None
             if secret_key:
                 GROQ_API_KEY = secret_key
                 print(f"✅ Using GROQ_API_KEY from Streamlit secrets")
