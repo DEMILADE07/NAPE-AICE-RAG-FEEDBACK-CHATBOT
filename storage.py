@@ -3,6 +3,7 @@ import sqlite3
 import chromadb
 from chromadb.config import Settings
 import json
+import shutil
 from typing import List, Dict, Optional
 from pathlib import Path
 from datetime import datetime
@@ -32,10 +33,32 @@ class StorageManager:
         
         # ChromaDB for vector storage
         Path(CHROMA_DB_PATH).mkdir(exist_ok=True)
-        self.vector_db = chromadb.PersistentClient(
-            path=str(CHROMA_DB_PATH),
-            settings=Settings(anonymized_telemetry=False)
-        )
+        
+        # Initialize ChromaDB with error handling for uninitialized databases
+        try:
+            self.vector_db = chromadb.PersistentClient(
+                path=str(CHROMA_DB_PATH),
+                settings=Settings(anonymized_telemetry=False)
+            )
+        except (ValueError, Exception) as e:
+            # If database is uninitialized or corrupted, try to reset it
+            error_str = str(e).lower()
+            if 'tenant' in error_str or 'no such table' in error_str or 'not found' in error_str:
+                print(f"⚠️  ChromaDB database not initialized, resetting...")
+                # Remove the directory and recreate it
+                if CHROMA_DB_PATH.exists():
+                    try:
+                        shutil.rmtree(str(CHROMA_DB_PATH))
+                    except:
+                        pass
+                Path(CHROMA_DB_PATH).mkdir(exist_ok=True)
+                # Try again
+                self.vector_db = chromadb.PersistentClient(
+                    path=str(CHROMA_DB_PATH),
+                    settings=Settings(anonymized_telemetry=False)
+                )
+            else:
+                raise
         
         # Get or create collection
         try:
