@@ -350,6 +350,9 @@ class DataIngestion:
                     event_variations.extend(['african nite', 'african night'])
                 if 'committee feedback' in event_lower:
                     event_variations.extend(['committee feedback', 'committee'])
+                if 'alumni reunion' in event_lower:
+                    # Prioritize exact match for ALUMNI REUNION
+                    event_variations = ['alumni reunion'] + event_variations
                 
                 # Score and rank matches
                 matches = []
@@ -398,8 +401,14 @@ class DataIngestion:
                                     # Single-word event: accept if word is found and is substantial
                                     if len(event_words[0]) > 8 or event_words[0] in sheet_name:
                                         score = 40  # Moderate match for single-word events
-                                elif matched_words >= 2 or (matched_words == 1 and len(event_words[0]) > 8):
-                                    score = 30  # Weak match for multi-word events
+                                elif matched_words >= 2:
+                                    # For multi-word events, if both/all words match, give higher score
+                                    if matched_words == len(event_words):
+                                        score = 50  # All words matched - good match
+                                    else:
+                                        score = 30  # Some words matched - weak match
+                                elif matched_words == 1 and len(event_words[0]) > 8:
+                                    score = 30  # Single long word matched
                     
                     # Final fallback: Check if the entire event name (as a word) appears in sheet name
                     # This catches cases like "ACCOMMODATION FEEDBACK", "FEEDING FORM", etc.
