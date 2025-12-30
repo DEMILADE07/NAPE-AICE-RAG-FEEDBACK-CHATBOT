@@ -431,8 +431,9 @@ class DataIngestion:
                     best_match = matches[0]
                     
                     # Debug: Show top matches for troubleshooting
-                    if len(matches) > 0 and best_match['score'] < 50:
-                        # Low score match - show what we found
+                    # Always show matches for ALUMNI REUNION to help debug
+                    if len(matches) > 0 and (best_match['score'] < 50 or 'alumni' in event_lower):
+                        # Low score match or ALUMNI REUNION - show what we found
                         top_3 = matches[:3]
                         print(f"   🔍 Found potential matches (top 3):")
                         for m in top_3:
@@ -496,6 +497,21 @@ class DataIngestion:
                     # If we get here, all matches failed
                     if last_error:
                         print(f"   ⚠️  All {len(matches)} potential matches failed. Last error: {last_error[:100]}")
+                    
+                    # Special debug for ALUMNI REUNION - show all sheets with "alumni" or "reunion"
+                    if 'alumni' in event_lower or 'reunion' in event_lower:
+                        print(f"   🔍 Debug: Searching for sheets containing 'alumni' or 'reunion'...")
+                        try:
+                            all_sheets_debug = self._retry_with_backoff(_list_sheets)
+                            matching_sheets = [s for s in all_sheets_debug if 'alumni' in s['name'].lower() or 'reunion' in s['name'].lower()]
+                            if matching_sheets:
+                                print(f"   📋 Found {len(matching_sheets)} sheet(s) with 'alumni' or 'reunion':")
+                                for sheet in matching_sheets[:5]:
+                                    print(f"      - '{sheet['name']}'")
+                            else:
+                                print(f"   ⚠️  No sheets found containing 'alumni' or 'reunion'")
+                        except Exception as debug_e:
+                            print(f"   ⚠️  Could not list sheets for debug: {str(debug_e)[:100]}")
             except Exception as e:
                 pass
             
