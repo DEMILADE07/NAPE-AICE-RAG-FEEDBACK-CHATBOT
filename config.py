@@ -166,13 +166,70 @@ ENABLE_CACHING = True  # Cache query results for faster responses
 
 # Event Categories (for better organization)
 EVENT_CATEGORIES = {
-    "WiGE": ["WiGE", "Women in Geosciences"],
-    "Technical": ["Technical Sessions", "Poster Session", "Basin Evaluation"],
-    "Social": ["African Nite", "President's Night", "Awards", "Ice Breaker"],
-    "Logistics": ["Accommodation", "Feeding", "Transportation", "Registration"],
-    "Professional": ["Leadership Forum", "Management Session", "AGM"],
-    "Competition": ["Hackathon", "Quiz", "Pitch", "Competition"],
-    "Other": []
+    "Technical": [
+        "Technical Sessions", 
+        "Poster Session",
+        "Poster Presentation",
+        "Pre-Conference Field Trip",
+        "Pre-Conference Short Courses",
+        "Pre-Conference Workshop",
+        "Data Hackathon",
+        "Field Trip"
+    ],
+    "Social": [
+        "African Nite",
+        "African Night", 
+        "President's Night", 
+        "Ice Breaker",
+        "Welcome Cocktail",
+        "WiGE",
+        "All - Convention Luncheon",
+        "All-Convention Luncheon",
+        "Alumni Reunion",
+        "Golf Tournament",
+        "Charity Golf",
+        "YP Meet & Greet",
+        "Networking"
+    ],
+    "Professional": [
+        "Leadership Forum",
+        "UAP Leadership",
+        "YP Leadership",
+        "Management Session",
+        "Executive Management",
+        "Energy Institute",
+        "Opening Ceremony",
+        "Annual General Meeting",
+        "AGM",
+        "Awards & Recognition",
+        "Awards and Recognition",
+        "Exhibition",
+        "Exhibitions",
+        "Finance and Investment Forum",
+        "Finance & Investment",
+        "TechBusiness Forum",
+        "Tech Business"
+    ],
+    "Logistics": [
+        "Accommodation",
+        "Accomodation",  # Common typo
+        "Feeding", 
+        "Transportation",
+        "Transport",
+        "Registration",
+        "Registeration",  # Common typo
+        "Committee Feedback"
+    ],
+    "Competition": [
+        "Hackathon",
+        "Quiz",
+        "Geoscience Quiz",
+        "Pitch",
+        "Pitch-a-ton",
+        "Pitch-a-thon",
+        "Basin Evaluation Competition",
+        "BEC"
+    ]
 }
 
 # All hotels available in the accommodation form (17 total)
